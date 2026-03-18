@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <title>手勢控制 3D 方塊</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+      }
+      #canvas-container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+      /* 隱藏原始視訊畫面，或縮小放在角落 */
+      #webcam {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        width: 200px;
+        height: auto;
+        border: 2px solid white;
+        transform: scaleX(-1); /* 鏡像顯示比較符合直覺 */
+        z-index: 10;
+      }
+      #three-canvas {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvas-container">
+      <video id="webcam"></video>
+      <canvas id="three-canvas"></canvas>
+    </div>
+
+    <script>
+      /** 1. 初始化 Three.js 場景 **/
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+      const renderer = new THREE.WebGLRenderer({
+        canvas: document.getElementById('three-canvas'),
+        antialias: true,
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      // 建立彩色方塊
+      const geometry = new THREE.BoxGeometry(2, 2, 2);
+      const material = new THREE.MeshNormalMaterial(); // 顏色隨法線變化，不需光源
+      const cube = new THREE.Mesh(geometry, material);
+      scene.add(cube);
+
+      camera.position.z = 5;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      /** 2. 設定 MediaPipe Hands **/
+      const videoElement = document.getElementById('webcam');
+      const hands = new Hands({
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7,
+      });
+
+      // 當偵測到手勢時的回傳函式
+      hands.onResults((results) => {
+        if (
+          results.multiHandLandmarks &&
+          results.multiHandLandmarks.length > 0
+        ) {
+          const landmarks = results.multiHandLandmarks[0];
+
+          // 使用食指指尖 (Landmark 8)
+          // 座標範圍是 0.0 ~ 1.0
+          const indexTip = landmarks[8];
+
+          // 將座標轉換為旋轉角度 (鏡像處理：1 - x)
+          const targetRotY = (1 - indexTip.x - 0.5) * Math.PI * 2;
+          const targetRotX = (indexTip.y - 0.5) * Math.PI * 2;
+
+          // 加上簡單的平滑插值 (Lerp) 讓動作更順暢
+          cube.rotation.y += (targetRotY - cube.rotation.y) * 0.1;
+          cube.rotation.x += (targetRotX - cube.rotation.x) * 0.1;
+        }
+      });
+
+      /** 3. 啟動攝影機 **/
+      const cameraHelper = new Camera(videoElement, {
+        onFrame: async () => {
+          await hands.send({ image: videoElement });
+        },
+        width: 640,
+        height: 480,
+      });
+      cameraHelper.start();
+
+      // 視窗調整大小自適應
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </body>
+</html>
